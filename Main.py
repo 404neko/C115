@@ -9,6 +9,10 @@ from PIL import Image
 from Command import *
 import platform
 import json
+import StringIO
+import sys
+
+tNone=StringIO.StringIO()
 
 Platform=platform.system()
 
@@ -78,7 +82,7 @@ def Scan(V):
     else:
         V.save('Tarsh/QRCode')
     Final=os.popen(ZBar(Platform)+' '+'Tarsh/QRCode').read().split('scan/')[1][:-1]
-    return Final
+    return os.system(ZBar(Platform)+' '+'Tarsh/QRCode'+' >nul 2>nul'),Final
 
 def ScanProcess(UID,V_ssoid,Cookies,V_user_id):
     Cookie=''
@@ -95,7 +99,10 @@ def ScanProcess(UID,V_ssoid,Cookies,V_user_id):
             'Host': 'proapi.115.com',
             'Connection': 'Keep-Alive'
     }
+    sys.stderr=tNone
+    tStdout=sys.stderr
     requests.get(Url,headers=Header,verify=False)
+    sys.stderr=tStdout
     time.sleep(1)
     Header['Content-Type']='application/x-www-form-urlencoded'
     Data='client=0&uid='+UID+'&key='+UID+'&user_id='+V_user_id+'&app_ver=5.6.3'
@@ -104,24 +111,76 @@ def ScanProcess(UID,V_ssoid,Cookies,V_user_id):
 
 #def LoginProcess()
 
+def YN(String):
+    if String.lower()=='y':
+        return 1
+    else:
+        if String.lower()=='n':
+            return -1
+        else:
+            return 0
+
+def CredentialCheck(Credential):
+    if Credential.find('"error":""')==-1:
+        return False
+    try:
+        JSON=json.loads(Credential)
+    except:
+        return False
+    try:
+        Cookied=JSON['cookie_set']
+        ssoidd=JSON['ssoid']
+        useridd=JSON['user_id']
+    except:
+        return False
+    return True
+
 if os.path.isfile('Data/Initialized'):
     if not os.path.isfile('Data/Credential.json'):
-        from Config.Account import *
+        try:
+            from Config.Account import *
+        except:
+            os.system('python Initialize.py')
+            try:
+                from Config.Account import *
+            except:
+                print 'Can\'t create Account.py. Exit.'
+                exit(-1)
         Data=UrlBuild(Account['Account'],Account['PassWord'],GenDeviceID())
         Header['Content-Length']=str(len(Data))
+        sys.stderr=tNone
+        tStdout=sys.stderr
         Request=requests.post('https://proapi.115.com/android/1.0/login',headers=Header,data=Data,verify=False)
+        sys.stderr=tStdout
         Credential=Request.content
         with open('Data/Credential.json','wb') as File:
             File.write(Credential)
     else:
-        pass
-
-Scand=raw_input()
-UID=Scan(Scand)
-File=open('Data/Credential.json')
-Credential=File.read()
-JSON=json.loads(Credential)
-Cookied=JSON['cookie_set']
-ssoidd=JSON['ssoid']
-useridd=JSON['user_id']
-ScanProcess(UID,ssoidd,Cookied,useridd)
+        while True:
+            QRCodeUrl=raw_input('Please enter QRCode\'s url:')
+            #http://www.115.com/scan/?ct=scan&ac=qrcode&uid=218cf9b0eee6a2ece5b89fa72520f9e5d9c93481&_t=1445010370287
+            if QRCodeUrl.find('scan')!=-1 and QRCodeUrl.find('uid=')!=-1 and QRCodeUrl.find('ac=')!=-1:
+                break
+            else:
+                print 'Not a QRCode url!'
+                pass
+        ReturnByScan=Scan(QRCodeUrl)
+        if ReturnByScan[0]!=0:
+            print('Run zbar failed. Exit.')
+            exit(-1)
+        else:
+            UID=ReturnByScan[1]
+        File=open('Data/Credential.json')
+        Credential=File.read()
+        if CredentialCheck(Credential):
+            JSON=json.loads(Credential)
+            V_Cookie=JSON['cookie_set']
+            V_ssoid=JSON['ssoid']
+            V_userid=JSON['user_id']
+            if ScanProcess(UID,V_ssoid,V_Cookie,V_userid):
+                print 'Success!'
+            else:
+                print 'Fail.'
+        else:
+            print 'Credential file can\'t check fail. Exit.'
+            exit(-1)
